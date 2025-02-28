@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Market Analysis Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .list-group-item {
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .list-group-item:hover {
+            background-color: #e9ecef;
+            transform: translateX(5px);
+        }
+        .list-group-item.active {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+            color: white;
+        }
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+            margin-bottom: 20px;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .card-header {
+            background-color: #0d6efd;
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 15px;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            padding: 15px;
+        }
+        .loading-spinner {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .fa-spinner {
+            animation: spin 1s linear infinite;
+        }
+        .error-message {
+            display: none;
+            color: #dc3545;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            text-align: center;
+        }
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #0d6efd;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            .chart-container {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="mb-4 text-center">Stock Market Analysis Dashboard</h1>
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-chart-line"></i> Market Indices</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="search-box" class="p-2">
+                            <input type="text" class="form-control" placeholder="Search indices..." id="indexSearch">
+                        </div>
+                        <ul id="indices-list" class="list-group list-group-flush"></ul>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-9">
+                <div id="stats-section" class="stats-container">
+                    <!-- Stats cards will be dynamically inserted here -->
+                </div>
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 id="chart-title" class="mb-0"><i class="fas fa-chart-area"></i> Select an index to view data</h5>
+                        <div class="btn-group">
+                            <!-- <button class="btn btn-light btn-sm" id="oneMonth">1M</button> -->
+                            <button class="btn btn-light btn-sm" id="threeMonths">3M</button>
+                            <button class="btn btn-light btn-sm" id="sixMonths">6M</button>
+                            <button class="btn btn-light btn-sm active" id="oneYear">1Y</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="stockChart"></canvas>
+                            <div class="loading-spinner" id="loadingSpinner">
+                                <i class="fas fa-spinner fa-3x"></i>
+                                <div>Loading data...</div>
+                            </div>
+                        </div>
+                        <div id="errorMessage" class="error-message"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentChart = null;
+        let currentData = null;
+        let activeTimeframe = 'oneYear';
+
+        // Search functionality
+        document.getElementById('indexSearch').addEventListener('input', function(e) {
+            const searchTerm = e.target.value.toLowerCase();
+            document.querySelectorAll('#indices-list .list-group-item').forEach(item => {
+                const text = item.textContent.toLowerCase();
+                item.style.display = text.includes(searchTerm) ? '' : 'none';
+            });
+        });
+
+        // Time period buttons
+        document.querySelectorAll('.btn-group .btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                activeTimeframe = this.id;
+                if (currentData) {
+                    updateChart(currentData);
+                }
+            });
+        });
+
+        document.addEventListener("DOMContentLoaded", async function() {
+            const indicesList = document.getElementById("indices-list");
+            showLoading(true);
+            try {
+                const response = await fetch("/api/indices");
+                const indices = await response.json();
+                indices.forEach(index => {
+                    const li = document.createElement("li");
+                    li.classList.add("list-group-item");
+                    li.innerHTML = `<i class="fas fa-chart-bar"></i> ${index}`;
+                    li.onclick = () => loadIndexData(index);
+                    indicesList.appendChild(li);
+                });
+            } catch (error) {
+                showError("Failed to load indices. Please try again later.");
+            } finally {
+                showLoading(false);
+            }
+        });
+
+        function showLoading(show) {
+            document.getElementById('loadingSpinner').style.display = show ? 'block' : 'none';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = message ? 'block' : 'none';
+        }
+
+        function updateStats(data) {
+            const statsSection = document.getElementById('stats-section');
+            const latestValue = data[data.length - 1].closing_index_value;
+            const previousValue = data[data.length - 2].closing_index_value;
+            const change = latestValue - previousValue;
+            const percentChange = (change / previousValue * 100).toFixed(2);
+            
+            statsSection.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">Latest Value</div>
+                    <div class="stat-value">${parseFloat(latestValue).toFixed(2)}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Change</div>
+                    <div class="stat-value ${change >= 0 ? 'text-success' : 'text-danger'}">
+                        ${change >= 0 ? '+' : ''}${change.toFixed(2)}
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">% Change</div>
+                    <div class="stat-value ${percentChange >= 0 ? 'text-success' : 'text-danger'}">
+                        ${percentChange >= 0 ? '+' : ''}${percentChange}%
+                    </div>
+                </div>
+            `;
+        }
+
+        function filterDataByTimeframe(data) {
+            const now = new Date();
+            let cutoffDate = new Date();
+            
+            switch(activeTimeframe) {
+                case 'oneMonth':
+                    cutoffDate.setMonth(now.getMonth() - 1);
+                    break;
+                case 'threeMonths':
+                    cutoffDate.setMonth(now.getMonth() - 3);
+                    break;
+                case 'sixMonths':
+                    cutoffDate.setMonth(now.getMonth() - 6);
+                    break;
+                case 'oneYear':
+                default:
+                    cutoffDate.setFullYear(now.getFullYear() - 1);
+            }
+            
+            return data.filter(item => new Date(item.index_date) >= cutoffDate);
+        }
+
+        function updateChart(data) {
+            const filteredData = filterDataByTimeframe(data);
+            
+            const chartData = {
+                labels: filteredData.map(item => {
+                    const date = new Date(item.index_date);
+                    return date.toLocaleDateString();
+                }),
+                datasets: [{
+                    label: 'Closing Value',
+                    data: filteredData.map(item => item.closing_index_value),
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                    tension: 0.1,
+                    fill: true
+                }]
+            };
+
+            if (currentChart) {
+                currentChart.destroy();
+            }
+
+            const ctx = document.getElementById('stockChart').getContext('2d');
+            currentChart = new Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Value: ${parseFloat(context.raw).toFixed(2)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toLocaleString();
+                                }
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function loadIndexData(index) {
+            document.querySelectorAll('#indices-list .list-group-item').forEach(item => {
+                item.classList.remove('active');
+                if(item.textContent.includes(index)) {
+                    item.classList.add('active');
+                }
+            });
+
+            showLoading(true);
+            showError('');
+
+            try {
+                const response = await fetch(`/api/data/${index}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch data');
+                }
+                
+                const data = await response.json();
+                if (data.length === 0) {
+                    throw new Error('No data available for this index');
+                }
+
+                currentData = data;
+                document.getElementById('chart-title').textContent = `${index} Performance`;
+                updateStats(data);
+                updateChart(data);
+            } catch (error) {
+                showError(error.message || "Error loading index data. Please try again later.");
+            } finally {
+                showLoading(false);
+            }
+        }
+    </script>
+</body>
+</html>
